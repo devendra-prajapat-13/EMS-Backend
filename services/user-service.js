@@ -7,7 +7,7 @@ class UserService {
 
     createUser = async user => await UserModel.create(user);
 
-    updateUser = async (_id,user) => await UserModel.updateOne({_id},user);
+    updateUser = async (_id, user) => await UserModel.updateOne({ _id }, user);
 
     findCount = async filter => await UserModel.find(filter).countDocuments();
 
@@ -15,44 +15,47 @@ class UserService {
 
     findUsers = async filter => await UserModel.find(filter).populate('team');
 
-    verifyPassword = async (password,hashPassword) => await bcrypt.compare(password,hashPassword);
+    verifyPassword = async (password, hashPassword) => await bcrypt.compare(password, hashPassword);
 
-    resetPassword = async (_id,password) => await UserModel.updateOne({_id},{password});
+    resetPassword = async (_id, password) => await UserModel.updateOne({ _id }, { password });
 
-    updatePassword = async (_id,password) => await UserModel.updateOne({_id},{password});
+    updatePassword = async (_id, password) => await UserModel.updateOne({ _id }, { password });
 
-    findLeaders = async (req,res,next) =>  await UserModel.aggregate([
-    {$match: { "type": 'leader' }},
-    {
-        $lookup:
+    findLeaders = async (req, res, next) => await UserModel.aggregate([
+        { $match: { "type": 'leader' } },
         {
-            from: "teams",
-            localField: "_id",
-            foreignField: "leader",
-            as: "team"
+            $lookup:
+            {
+                from: "teams",
+                localField: "_id",
+                foreignField: "leader",
+                as: "team"
+            }
         }
-    }
     ])
 
-    findFreeLeaders = async (req,res,next) =>  await UserModel.aggregate([
-    {$match: { "type": 'leader' }},
-    {
-        $lookup:
+    findFreeLeaders = async (req, res, next) => await UserModel.aggregate([
+        { $match: { "type": 'leader' } },
         {
-            from: "teams",
-            localField: "_id",
-            foreignField: "leader",
-            as: "team"
-        }
-    },
-    {$match: { "team": {$eq:[]} }}
+            $lookup:
+            {
+                from: "teams",
+                localField: "_id",
+                foreignField: "leader",
+                as: "team"
+            }
+        },
+        { $match: { "team": { $eq: [] } } }
     ])
 
     createLeaveApplication = async data => LeaveModel.create(data);
 
     findLeaveApplication = async (data) => LeaveModel.findOne(data);
 
-    findAllLeaveApplications = async (data) => LeaveModel.find(data);
+    // findAllLeaveApplications = async (data) => LeaveModel.find(data);
+
+    findAllLeaveApplications = async (data) =>
+        LeaveModel.find(data).populate("applicantID", "name");
 
     assignSalary = async (data) => UserSalaryModel.create(data);
 
@@ -60,7 +63,7 @@ class UserService {
 
     findAllSalary = async (data) => UserSalaryModel.find(data);
 
-    updateSalary = async (data, updatedSalary) => UserSalaryModel.findOneAndUpdate(data,updatedSalary);
+    updateSalary = async (data, updatedSalary) => UserSalaryModel.findOneAndUpdate(data, updatedSalary);
 
     updateLeaveApplication = async (id, updatedLeave) => LeaveModel.findByIdAndUpdate(id, updatedLeave);
 

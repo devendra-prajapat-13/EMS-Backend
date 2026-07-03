@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+﻿const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 
 const LeaveSchema = new Schema({
@@ -12,6 +12,12 @@ const LeaveSchema = new Schema({
     period: {type: Number, required: true, min: 1, max: 10},
     reason: {type: String, required: true},
     adminResponse: {type: String, default: 'N/A'},
+
+    // Approver metadata: who approved/rejected and when
+    approverID: {type: Schema.Types.ObjectId, ref: 'User', required: false},
+    approverRole: {type: String, enum:['admin','leader'], required:false},
+    approverName: {type: String, required:false, default:'N/A'},
+    approverDate: {type: String, required:false, default:''}
 
 });
 

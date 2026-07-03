@@ -1,7 +1,8 @@
-const ErrorHandler = require('../utils/error-handler');
+﻿const ErrorHandler = require('../utils/error-handler');
 const userService = require('../services/user-service');
 const UserDto = require('../dtos/user-dto');
 const mongoose = require('mongoose');
+const LeaveDto = require('../dtos/leave-dto');
 const crypto = require('crypto');
 const teamService = require('../services/team-service');
 const attendanceService = require('../services/attendance-service');
@@ -171,7 +172,7 @@ class UserController {
        console.log(resp);
        if(!resp) return next(ErrorHandler.serverError('Failed to mark attendance'));
 
-       const msg = d.toLocaleDateString() +" "+ days[d.getDay()]+" "+ "Attendance Marked!";
+       const msg = d.toLocaleDateString() +" "+ days[d.getDay()] +" "+ "Attendance Marked!";
        
        res.json({success:true,newAttendance,message:msg});
             
@@ -215,7 +216,7 @@ class UserController {
             const resp = await userService.createLeaveApplication(newLeaveApplication);
             if(!resp) return next(ErrorHandler.serverError('Failed to apply leave'));
 
-            res.json({success:true,data:resp});
+            res.json({success:true,data:new LeaveDto(resp)});
 
         } catch (error) {
             res.json({success:false,error});   
@@ -228,7 +229,8 @@ class UserController {
             const resp = await userService.findAllLeaveApplications(data);
             if(!resp) return next(ErrorHandler.notFound('No Leave Applications found'));
 
-            res.json({success:true,data:resp});
+            const leaves = resp.map((l)=> new LeaveDto(l));
+            res.json({success:true,data:leaves});
 
         } catch (error) {
             res.json({success:false,error});
@@ -240,6 +242,30 @@ class UserController {
 
             const {id} = req.params;
             const body = req.body;
+
+            // Authorization: allow admin to update any leave; allow leader only for their team members
+            if(req.user && req.user.type === 'leader'){
+                const leave = await userService.findLeaveApplication({_id: id});
+                if(!leave) return next(ErrorHandler.notFound('Leave Application Not Found'));
+
+                const applicant = await userService.findUser({_id: leave.applicantID});
+                if(!applicant) return next(ErrorHandler.notFound('Applicant Not Found'));
+
+                if(!applicant.team) return next(ErrorHandler.unAuthorized('Applicant is not assigned to any team'));
+
+                const team = await teamService.findTeam({_id: applicant.team, leader: req.user._id});
+                if(!team) return next(ErrorHandler.unAuthorized('You are not authorized to update this leave'));
+            }
+
+            // Attach approver metadata
+            if(req.user){
+                body.approverID = req.user._id;
+                body.approverRole = req.user.type;
+                const approver = await userService.findUser({_id: req.user._id});
+                if(approver) body.approverName = approver.name;
+                body.approverDate = new Date().toISOString();
+            }
+
             const isLeaveUpdated = await userService.updateLeaveApplication(id,body);
             if(!isLeaveUpdated) return next(ErrorHandler.serverError('Failed to update leave'));
             res.json({success:true,message:'Leave Updated'});
@@ -299,3 +325,8 @@ class UserController {
 }
 
 module.exports = new UserController();
+
+
+
+
+
