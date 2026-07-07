@@ -11,6 +11,10 @@ class TeamService{
     findCount = async filter => await TeamModel.find(filter).countDocuments();
 
     updateTeam = async (_id,data) => await TeamModel.updateOne({_id},data,{ runValidators: true });
+
+    updateTeams = async (filter,data) => await TeamModel.updateMany(filter,data,{ runValidators: true });
+
+    deleteTeam = async (_id) => await TeamModel.deleteOne({_id});
     
     
 

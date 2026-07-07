@@ -42,6 +42,20 @@ class TeamController {
         return (teamResp.modifiedCount!=1) ? next(ErrorHandler.serverError('Failed To Update Team')) : res.json({success:true,message:'Team Updated'})
     }
 
+    deleteTeam = async (req,res,next) =>
+    {
+        const {id} = req.params;
+        if(!id) return next(ErrorHandler.badRequest('Team Id Is Missing'));
+        if(!mongoose.Types.ObjectId.isValid(id)) return next(ErrorHandler.badRequest('Invalid Team Id'));
+
+        const team = await teamService.findTeam({_id:id});
+        if(!team) return next(ErrorHandler.notFound('No Team Found'));
+
+        await userService.updateUsers({team:id},{team:null});
+        const result = await teamService.deleteTeam(id);
+        return result.deletedCount !== 1 ? next(ErrorHandler.serverError('Failed To Delete Team')) : res.json({success:true,message:`${team.name} has been deleted`});
+    }
+
     addMember = async (req,res,next) =>
     {
         const {teamId,userId} = req.body;

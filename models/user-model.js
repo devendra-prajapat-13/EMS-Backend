@@ -30,10 +30,10 @@ const userSchema = new Schema({
         trim:true
     },
     mobile:{
-        type:Number,
+        type:String,
         required:true,
-        minlength:10,
-        maxlength:13,
+        trim:true,
+        match:[/^\d{10}$/,'Mobile number must be exactly 10 digits'],
     },
     password:{
         type:String,

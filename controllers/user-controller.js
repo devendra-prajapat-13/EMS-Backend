@@ -7,6 +7,9 @@ const crypto = require('crypto');
 const teamService = require('../services/team-service');
 const attendanceService = require('../services/attendance-service');
 
+const isValidMobile = (mobile) => /^\d{10}$/.test(String(mobile || ''));
+const isPositiveNumber = (value) => Number(value) > 0;
+const hasMinLength = (value, length) => String(value || '').trim().length >= length;
 
 class UserController {
 
@@ -16,6 +19,7 @@ class UserController {
         let {name,email,password,type, address, mobile} = req.body;
         const username = 'user'+crypto.randomInt(11111111,999999999);
         if(!name || !email || !username || !password || !type || !address || !file || !mobile) return next(ErrorHandler.badRequest('All Fields Required'));
+        if(!isValidMobile(mobile)) return next(ErrorHandler.badRequest('Mobile number must be exactly 10 digits'));
         type = type.toLowerCase();
         if(type==='admin')
         {
@@ -51,9 +55,11 @@ class UserController {
         console.log(req.user.type);
         if(req.user.type==='admin')
         {
-            const {id} = req.params;
+            id = req.params.id;
             let {name,username,email,password,type,status, address, mobile} = req.body;
             type = type && type.toLowerCase();
+            status = status && status.toLowerCase();
+            if(mobile && !isValidMobile(mobile)) return next(ErrorHandler.badRequest('Mobile number must be exactly 10 digits'));
             if(!mongoose.Types.ObjectId.isValid(id)) return next(ErrorHandler.badRequest('Invalid User Id'));
             if(type)
             {
@@ -85,15 +91,38 @@ class UserController {
         {
             id =  req.user._id;
             let {name,username,address,mobile} = req.body;
+            if(mobile && !isValidMobile(mobile)) return next(ErrorHandler.badRequest('Mobile number must be exactly 10 digits'));
             user = {
                 name,username,mobile,address,image:filename
             }
         }
+        Object.keys(user).forEach((key) => {
+            if(user[key] === undefined || (key === 'password' && user[key] === '')) {
+                delete user[key];
+            }
+        });
         // console.log(user);
         const userResp = await userService.updateUser(id,user);
         // console.log(userResp);
-        if(!userResp) return next(ErrorHandler.serverError('Failed To Update Account'));
+        if(!userResp || userResp.matchedCount === 0) return next(ErrorHandler.serverError('Failed To Update Account'));
         res.json({success:true,message:'Account Updated'});
+    }
+
+    deleteUser = async (req,res,next) =>
+    {
+        const {id} = req.params;
+        if(!mongoose.Types.ObjectId.isValid(id)) return next(ErrorHandler.badRequest('Invalid User Id'));
+        if(String(req.user._id) === String(id)) return next(ErrorHandler.badRequest(`You Can't Delete Your Own Account`));
+
+        const user = await userService.findUser({_id:id});
+        if(!user) return next(ErrorHandler.notFound('No User Found'));
+
+        if(user.type === 'leader') {
+            await teamService.updateTeams({leader:id},{leader:null});
+        }
+
+        const result = await userService.deleteUser(id);
+        return result.deletedCount !== 1 ? next(ErrorHandler.serverError('Failed To Delete User')) : res.json({success:true,message:`${user.name} has been deleted`});
     }
 
     getUsers = async (req,res,next) =>
@@ -198,6 +227,13 @@ class UserController {
         try {
             const data = req.body;
             const { applicantID, title, type, startDate, endDate, appliedDate, period, reason } = data;
+            if(!applicantID || !title || !type || !startDate || !endDate || !appliedDate || !period || !reason) {
+                return next(ErrorHandler.badRequest('All Fields Required'));
+            }
+            if(!hasMinLength(title, 3)) return next(ErrorHandler.badRequest('Title must be at least 3 characters'));
+            if(!isPositiveNumber(period)) return next(ErrorHandler.badRequest('Period must be greater than 0'));
+            if(new Date(endDate) < new Date(startDate)) return next(ErrorHandler.badRequest('End date cannot be before start date'));
+            if(!hasMinLength(reason, 3)) return next(ErrorHandler.badRequest('Reason must be at least 3 characters'));
             const newLeaveApplication = {
                 applicantID,
                 title,
@@ -279,6 +315,11 @@ class UserController {
     assignEmployeeSalary = async (req, res, next) => {
         try {
             const data = req.body;
+            const { employeeID, salary, bonus, reasonForBonus } = data;
+            if(!employeeID || !salary || bonus === undefined || !reasonForBonus) return next(ErrorHandler.badRequest('All Fields Required'));
+            if(!isPositiveNumber(salary)) return next(ErrorHandler.badRequest('Salary must be greater than 0'));
+            if(Number(bonus) < 0) return next(ErrorHandler.badRequest('Bonus cannot be negative'));
+            if(!hasMinLength(reasonForBonus, 3)) return next(ErrorHandler.badRequest('Reason must be at least 3 characters'));
             const obj = {
                 "employeeID":data.employeeID
             }
@@ -298,7 +339,11 @@ class UserController {
     updateEmployeeSalary = async (req,res,next) => {
         try {
             const body = req.body;
-            const {employeeID} = body;
+            const {employeeID, salary, bonus, reasonForBonus} = body;
+            if(!employeeID || !salary || bonus === undefined || !reasonForBonus) return next(ErrorHandler.badRequest('All Fields Required'));
+            if(!isPositiveNumber(salary)) return next(ErrorHandler.badRequest('Salary must be greater than 0'));
+            if(Number(bonus) < 0) return next(ErrorHandler.badRequest('Bonus cannot be negative'));
+            if(!hasMinLength(reasonForBonus, 3)) return next(ErrorHandler.badRequest('Reason must be at least 3 characters'));
             const d = new Date();
             body["assignedDate"] = d.getFullYear()+"-"+(d.getMonth()+1)+"-"+d.getDate();
             const isSalaryUpdated = await userService.updateSalary({employeeID},body);

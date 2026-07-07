@@ -6,6 +6,7 @@ const asyncMiddleware = require('../middlewares/async-middleware');
 
 router.post('/user',upload.single('profile'),asyncMiddleware(userController.createUser));           // Create User
 router.patch('/user/:id',upload.single('profile'),asyncMiddleware(userController.updateUser));      // Update User
+router.delete('/user/:id',asyncMiddleware(userController.deleteUser));                              // Delete User
 router.get('/employees',asyncMiddleware(userController.getUsers));                                  // Employees
 router.get('/employees/free',asyncMiddleware(userController.getFreeEmployees));                     // Free Employees
 router.get('/employee/:id',asyncMiddleware(userController.getUser));                                // Employee
@@ -17,6 +18,7 @@ router.get('/leaders',asyncMiddleware(userController.getLeaders));              
 router.get('/leader/:id',asyncMiddleware(userController.getUser));                                  // Leader
 router.post('/team',upload.single('image'),asyncMiddleware(teamController.createTeam));             // Create Team
 router.patch('/team/:id',upload.single('image'),asyncMiddleware(teamController.updateTeam));        // Update Team
+router.delete('/team/:id',asyncMiddleware(teamController.deleteTeam));                              // Delete Team
 router.get('/teams',asyncMiddleware(teamController.getTeams));                                      // Teams
 router.get('/team/:id',asyncMiddleware(teamController.getTeam));                                    // Team
 router.get('/team/:id/members',asyncMiddleware(teamController.getTeamMembers));                     // Team Members
