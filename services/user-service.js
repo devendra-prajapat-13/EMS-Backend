@@ -7,7 +7,11 @@ class UserService {
 
     createUser = async user => await UserModel.create(user);
 
-    updateUser = async (_id, user) => await UserModel.updateOne({ _id }, user);
+    updateUser = async (_id, user) => await UserModel.updateOne({ _id }, user, { runValidators: true });
+
+    updateUsers = async (filter, user) => await UserModel.updateMany(filter, user, { runValidators: true });
+
+    deleteUser = async (_id) => await UserModel.deleteOne({ _id });
 
     findCount = async filter => await UserModel.find(filter).countDocuments();
 
@@ -63,7 +67,7 @@ class UserService {
 
     findAllSalary = async (data) => UserSalaryModel.find(data);
 
-    updateSalary = async (data, updatedSalary) => UserSalaryModel.findOneAndUpdate(data, updatedSalary);
+    updateSalary = async (data, updatedSalary) => UserSalaryModel.findOneAndUpdate(data, updatedSalary, { runValidators: true });
 
     updateLeaveApplication = async (id, updatedLeave) => LeaveModel.findByIdAndUpdate(id, updatedLeave);
 

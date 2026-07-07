@@ -67,6 +67,8 @@ class AuthController {
     {
         const {email,otp,password} = req.body;
         if(!email || !otp || !password)  return next(ErrorHandler.badRequest());
+        if(!validator.isEmail(email)) return next(ErrorHandler.badRequest('Invalid Email Address'));
+        if(String(password).length < 8) return next(ErrorHandler.badRequest('Password must be at least 8 characters'));
         const user = await userService.findUser({email});
         if(!user) return next(ErrorHandler.notFound('No Account Found'));
         const {_id:userId} = user;
