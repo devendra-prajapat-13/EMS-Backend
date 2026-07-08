@@ -1,6 +1,8 @@
 const UserModel = require('../models/user-model');
 const LeaveModel = require('../models/leave-model');
 const UserSalaryModel = require('../models/user-salary');
+const AttendanceModel = require('../models/attendance-model');
+const PayrollModel = require('../models/payroll-model');
 const bcrypt = require('bcrypt');
 
 class UserService {
@@ -12,6 +14,13 @@ class UserService {
     updateUsers = async (filter, user) => await UserModel.updateMany(filter, user, { runValidators: true });
 
     deleteUser = async (_id) => await UserModel.deleteOne({ _id });
+
+    deleteUserRelatedData = async (_id) => Promise.all([
+        LeaveModel.deleteMany({ applicantID: _id }),
+        UserSalaryModel.deleteMany({ employeeID: _id }),
+        AttendanceModel.deleteMany({ employeeID: _id }),
+        PayrollModel.deleteMany({ employeeID: _id })
+    ]);
 
     findCount = async filter => await UserModel.find(filter).countDocuments();
 

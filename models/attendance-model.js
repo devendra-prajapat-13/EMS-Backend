@@ -8,7 +8,13 @@ const AttendanceSchema = new Schema({
     date: {type: Number, required: true},
     day: {type: String, required: true},
     present: {type: Boolean, required: true},
+    checkInTime: {type: Date, required: false},
+    mode: {type: String, enum: ['Office', 'Work From Home'], default: 'Office'},
+    latitude: {type: Number, required: false},
+    longitude: {type: Number, required: false},
+    distanceFromOffice: {type: Number, required: false},
 });
 
+AttendanceSchema.index({ employeeID: 1, year: 1, month: 1, date: 1 }, { unique: true });
 
 module.exports = mongoose.model('Attendance', AttendanceSchema);
