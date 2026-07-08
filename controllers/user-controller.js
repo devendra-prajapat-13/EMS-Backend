@@ -6,10 +6,67 @@ const LeaveDto = require('../dtos/leave-dto');
 const crypto = require('crypto');
 const teamService = require('../services/team-service');
 const attendanceService = require('../services/attendance-service');
+const payrollService = require('../services/payroll-service');
 
 const isValidMobile = (mobile) => /^\d{10}$/.test(String(mobile || ''));
 const isPositiveNumber = (value) => Number(value) > 0;
 const hasMinLength = (value, length) => String(value || '').trim().length >= length;
+const OFFICE_LOCATION = {
+    latitude: 22.747667622934507,
+    longitude: 75.89663103060164,
+    radiusMeters: 100
+};
+
+const formatLocalDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
+
+const normalizeDateString = (value) => {
+    if(!value) return '';
+    const dateText = String(value).trim();
+    const parts = dateText.split('-');
+    if(parts.length !== 3) return dateText;
+
+    const [year, month, day] = parts;
+    if(!year || !month || !day) return dateText;
+
+    return `${year.padStart(4, '0')}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+};
+
+const normalizeText = (value) => String(value || '').trim().toLowerCase();
+const ATTENDANCE_DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+const getActiveWorkforceIds = async () => {
+    const users = await userService.findUsers({ type: { $in: ['employee', 'leader'] } });
+    return users.map((user) => user._id);
+};
+
+const getActiveWorkforceFilter = async (filter = {}, fieldName) => {
+    const activeIds = await getActiveWorkforceIds();
+    const selectedID = filter[fieldName];
+
+    if(selectedID) {
+        const isActive = activeIds.some((id) => String(id) === String(selectedID));
+        return isActive ? filter : null;
+    }
+
+    return { ...filter, [fieldName]: { $in: activeIds } };
+};
+
+const getDistanceInMeters = (lat1, lon1, lat2, lon2) => {
+    const toRadians = (value) => value * Math.PI / 180;
+    const earthRadius = 6371000;
+    const dLat = toRadians(lat2 - lat1);
+    const dLon = toRadians(lon2 - lon1);
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
+        Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return earthRadius * c;
+};
 
 class UserController {
 
@@ -122,14 +179,17 @@ class UserController {
         }
 
         const result = await userService.deleteUser(id);
-        return result.deletedCount !== 1 ? next(ErrorHandler.serverError('Failed To Delete User')) : res.json({success:true,message:`${user.name} has been deleted`});
+        if(result.deletedCount !== 1) return next(ErrorHandler.serverError('Failed To Delete User'));
+
+        await userService.deleteUserRelatedData(id);
+        return res.json({success:true,message:`${user.name} has been deleted`});
     }
 
     getUsers = async (req,res,next) =>
     {
         const type = req.path.split('/').pop().replace('s','');
         const emps = await userService.findUsers({type});
-        if(!emps || emps.length<1) return next(ErrorHandler.notFound(`No ${type.charAt(0).toUpperCase()+type.slice(1).replace(' ','')} Found`));
+        if(!emps || emps.length<1) return res.json({success:true,message:`No ${type.charAt(0).toUpperCase()+type.slice(1).replace(' ','')} Found`,data:[]});
         const employees = emps.map((o)=> new UserDto(o));
         res.json({success:true,message:`${type.charAt(0).toUpperCase()+type.slice(1).replace(' ','')} List Found`,data:employees})
     }
@@ -138,7 +198,7 @@ class UserController {
     getFreeEmployees = async (req,res,next) =>
     {
         const emps = await userService.findUsers({type:'employee',team:null});
-        if(!emps || emps.length<1) return next(ErrorHandler.notFound(`No Free Employee Found`));
+        if(!emps || emps.length<1) return res.json({success:true,message:'No Free Employee Found',data:[]});
         const employees = emps.map((o)=> new UserDto(o));
         res.json({success:true,message:'Free Employees List Found',data:employees})
     }
@@ -179,9 +239,70 @@ class UserController {
 
     markEmployeeAttendance = async (req,res,next) => {
         try {
-        const {employeeID} = req.body;
-        const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+        const {employeeID, mode = 'Office', latitude, longitude} = req.body;
         const d = new Date();
+        if(!employeeID) return next(ErrorHandler.badRequest('Employee Id Is Required'));
+        if(!['Office', 'Work From Home'].includes(mode)) return next(ErrorHandler.badRequest('Invalid attendance mode'));
+        let distanceFromOffice;
+
+        if(mode === 'Office') {
+            const lat = Number(latitude);
+            const lon = Number(longitude);
+            if(!Number.isFinite(lat) || !Number.isFinite(lon)) {
+                return next(ErrorHandler.badRequest('Location permission is required for office attendance'));
+            }
+
+            distanceFromOffice = Math.round(getDistanceInMeters(
+                OFFICE_LOCATION.latitude,
+                OFFICE_LOCATION.longitude,
+                lat,
+                lon
+            ));
+
+            if(distanceFromOffice > OFFICE_LOCATION.radiusMeters) {
+                return next(ErrorHandler.notAllowed(`You are ${distanceFromOffice} meters away from office. Office attendance is allowed within ${OFFICE_LOCATION.radiusMeters} meters.`));
+            }
+        }
+
+        if(mode === 'Work From Home') {
+            const today = formatLocalDate(d);
+            const applications = await userService.findAllLeaveApplications({
+                applicantID: employeeID,
+                type: 'Work From Home'
+            });
+            const hasApprovedWfh = applications.some((application) => {
+                const start = normalizeDateString(application.startDate);
+                const end = normalizeDateString(application.endDate);
+                const status = normalizeText(application.adminResponse);
+                const type = normalizeText(application.type);
+                const isApproved = status === 'approved';
+                const isWfh = type === 'work from home';
+                const isDateInRange = start <= today && today <= end;
+
+                console.log('[Attendance][WFH approval check]', {
+                    employeeID,
+                    leaveID: application._id,
+                    type: application.type,
+                    adminResponse: application.adminResponse,
+                    startDate: application.startDate,
+                    endDate: application.endDate,
+                    today,
+                    isApproved,
+                    isDateInRange
+                });
+
+                return isWfh && isApproved && isDateInRange;
+            });
+
+            if(!hasApprovedWfh) {
+                console.log('[Attendance][WFH approval failed]', {
+                    employeeID,
+                    today,
+                    matchedApplications: applications.length
+                });
+                return next(ErrorHandler.notAllowed('No approved Work From Home request found for today'));
+            }
+        }
 
         // const {_id} = employee;
         
@@ -190,20 +311,37 @@ class UserController {
             year:d.getFullYear(),
             month:d.getMonth() + 1,
             date:d.getDate(),
-            day:days[d.getDay()],
+            day:ATTENDANCE_DAYS[d.getDay()],
             present: true, 
+            checkInTime: d,
+            mode,
+            latitude,
+            longitude,
+            distanceFromOffice,
         };
 
-       const isAttendanceMarked = await attendanceService.findAttendance(newAttendance);
-       if(isAttendanceMarked) return next(ErrorHandler.notAllowed(d.toLocaleDateString() +" "+ days[d.getDay()-1]+" "+"Attendance Already Marked!"));
+       const isAttendanceMarked = await attendanceService.findAttendance({
+            employeeID,
+            year:d.getFullYear(),
+            month:d.getMonth() + 1,
+            date:d.getDate()
+       });
+       if(isAttendanceMarked) return next(ErrorHandler.notAllowed(d.toLocaleDateString() +" "+ ATTENDANCE_DAYS[d.getDay()]+" "+"Attendance Already Marked!"));
 
-       const resp = await attendanceService.markAttendance(newAttendance);
+       let resp;
+       try {
+            resp = await attendanceService.markAttendance(newAttendance);
+       }
+       catch (error) {
+            if(error.code === 11000) return next(ErrorHandler.notAllowed(d.toLocaleDateString() +" "+ ATTENDANCE_DAYS[d.getDay()]+" "+"Attendance Already Marked!"));
+            throw error;
+       }
        console.log(resp);
        if(!resp) return next(ErrorHandler.serverError('Failed to mark attendance'));
 
-       const msg = d.toLocaleDateString() +" "+ days[d.getDay()] +" "+ "Attendance Marked!";
+       const msg = d.toLocaleDateString() +" "+ ATTENDANCE_DAYS[d.getDay()] +" "+ `${mode} Attendance Marked!`;
        
-       res.json({success:true,newAttendance,message:msg});
+       res.json({success:true,newAttendance:resp,message:msg});
             
         } catch (error) {
             res.json({success:false,error});    
@@ -212,7 +350,8 @@ class UserController {
 
     viewEmployeeAttendance = async (req,res,next) => {
         try {
-            const data = req.body;
+            const data = await getActiveWorkforceFilter(req.body, 'employeeID');
+            if(!data) return res.json({success:true,data:[]});
             const resp = await attendanceService.findAllAttendance(data);
             if(!resp) return next(ErrorHandler.notFound('No Attendance found'));
 
@@ -261,7 +400,8 @@ class UserController {
 
     viewLeaveApplications = async (req, res, next) => {
         try {
-            const data = req.body;
+            const data = await getActiveWorkforceFilter(req.body, 'applicantID');
+            if(!data) return res.json({success:true,data:[]});
             const resp = await userService.findAllLeaveApplications(data);
             if(!resp) return next(ErrorHandler.notFound('No Leave Applications found'));
 
@@ -278,13 +418,23 @@ class UserController {
 
             const {id} = req.params;
             const body = req.body;
+            const existingLeave = await userService.findLeaveApplication({_id: id});
+            if(!existingLeave) return next(ErrorHandler.notFound('Leave Application Not Found'));
+
+            console.log('[Leave][update request]', {
+                leaveID: id,
+                requestedBy: req.user && req.user._id,
+                requesterRole: req.user && req.user.type,
+                currentStatus: existingLeave.adminResponse,
+                nextStatus: body.adminResponse,
+                type: existingLeave.type,
+                startDate: existingLeave.startDate,
+                endDate: existingLeave.endDate
+            });
 
             // Authorization: allow admin to update any leave; allow leader only for their team members
             if(req.user && req.user.type === 'leader'){
-                const leave = await userService.findLeaveApplication({_id: id});
-                if(!leave) return next(ErrorHandler.notFound('Leave Application Not Found'));
-
-                const applicant = await userService.findUser({_id: leave.applicantID});
+                const applicant = await userService.findUser({_id: existingLeave.applicantID});
                 if(!applicant) return next(ErrorHandler.notFound('Applicant Not Found'));
 
                 if(!applicant.team) return next(ErrorHandler.unAuthorized('Applicant is not assigned to any team'));
@@ -304,6 +454,11 @@ class UserController {
 
             const isLeaveUpdated = await userService.updateLeaveApplication(id,body);
             if(!isLeaveUpdated) return next(ErrorHandler.serverError('Failed to update leave'));
+            console.log('[Leave][update success]', {
+                leaveID: id,
+                previousStatus: existingLeave.adminResponse,
+                updatedStatus: body.adminResponse
+            });
             res.json({success:true,message:'Leave Updated'});
             
             
@@ -358,13 +513,110 @@ class UserController {
 
     viewSalary = async (req,res,next) => {
         try {
-            const data = req.body;
+            const data = await getActiveWorkforceFilter(req.body, 'employeeID');
+            if(!data) return res.json({success:true,data:[]});
             const resp = await userService.findAllSalary(data);
             if(!resp) return next(ErrorHandler.notFound('No Salary Found'));
             res.json({success:true,data:resp});
 
         } catch (error) {
             res.json({success:false,error});
+        }
+    }
+
+    getPayrollSummary = async (req, res, next) => {
+        try {
+            const { month, year, employeeID } = req.body;
+            const selectedMonth = Number(month);
+            const selectedYear = Number(year);
+            if(!selectedMonth || selectedMonth < 1 || selectedMonth > 12) return next(ErrorHandler.badRequest('Valid month is required'));
+            if(!selectedYear || selectedYear < 2000) return next(ErrorHandler.badRequest('Valid year is required'));
+
+            const data = await payrollService.getPayrollSummary({ month: selectedMonth, year: selectedYear, employeeID });
+            res.json({ success: true, data });
+        } catch (error) {
+            console.log('[Payroll][summary failed]', error);
+            res.json({ success: false, error });
+        }
+    }
+
+    generatePayroll = async (req, res, next) => {
+        try {
+            const { month, year, regenerate } = req.body;
+            const selectedMonth = Number(month);
+            const selectedYear = Number(year);
+            if(!selectedMonth || selectedMonth < 1 || selectedMonth > 12) return next(ErrorHandler.badRequest('Valid month is required'));
+            if(!selectedYear || selectedYear < 2000) return next(ErrorHandler.badRequest('Valid year is required'));
+
+            const data = await payrollService.generatePayroll({ month: selectedMonth, year: selectedYear, regenerate: Boolean(regenerate) });
+            res.json({
+                success: true,
+                message: 'Payroll processed',
+                data
+            });
+        } catch (error) {
+            console.log('[Payroll][generation failed]', error);
+            res.json({ success: false, message: error.message || 'Failed to generate payroll', error });
+        }
+    }
+
+    markPayrollPaid = async (req, res, next) => {
+        try {
+            const { employeeID, month, year, paymentDate, paymentMethod, paymentRemarks } = req.body;
+            if(!employeeID) return next(ErrorHandler.badRequest('Employee Id Is Required'));
+            const selectedMonth = Number(month);
+            const selectedYear = Number(year);
+            if(!selectedMonth || selectedMonth < 1 || selectedMonth > 12) return next(ErrorHandler.badRequest('Valid month is required'));
+            if(!selectedYear || selectedYear < 2000) return next(ErrorHandler.badRequest('Valid year is required'));
+
+            const payroll = await payrollService.markSalaryPaid({
+                employeeID,
+                month: selectedMonth,
+                year: selectedYear,
+                paymentDate,
+                paymentMethod,
+                paymentRemarks
+            });
+            if(!payroll) return next(ErrorHandler.notFound('Payroll must be generated before marking salary as paid'));
+            res.json({ success: true, message: 'Salary marked as paid', data: payroll });
+        } catch (error) {
+            console.log('[Payroll][mark paid failed]', error);
+            res.json({ success: false, error });
+        }
+    }
+
+    getEmployeePayrollHistory = async (req, res, next) => {
+        try {
+            const employeeID = req.body.employeeID || (req.user && req.user._id);
+            if(!employeeID) return next(ErrorHandler.badRequest('Employee Id Is Required'));
+            if(req.user && req.user.type !== 'admin' && String(req.user._id) !== String(employeeID)) {
+                return next(ErrorHandler.unAuthorized('You can view only your own payroll'));
+            }
+
+            const data = await payrollService.getEmployeePayrollHistory(employeeID);
+            res.json({ success: true, data });
+        } catch (error) {
+            res.json({ success: false, error });
+        }
+    }
+
+    getEmployeePayrollBreakdown = async (req, res, next) => {
+        try {
+            const { month, year } = req.body;
+            const employeeID = req.body.employeeID || (req.user && req.user._id);
+            const selectedMonth = Number(month);
+            const selectedYear = Number(year);
+            if(!employeeID) return next(ErrorHandler.badRequest('Employee Id Is Required'));
+            if(!selectedMonth || selectedMonth < 1 || selectedMonth > 12) return next(ErrorHandler.badRequest('Valid month is required'));
+            if(!selectedYear || selectedYear < 2000) return next(ErrorHandler.badRequest('Valid year is required'));
+            if(req.user && req.user.type !== 'admin' && String(req.user._id) !== String(employeeID)) {
+                return next(ErrorHandler.unAuthorized('You can view only your own payroll'));
+            }
+
+            const data = await payrollService.getPayrollSummary({ month: selectedMonth, year: selectedYear, employeeID });
+            res.json({ success: true, data: data.rows[0] || null });
+        } catch (error) {
+            res.json({ success: false, error });
         }
     }
 }

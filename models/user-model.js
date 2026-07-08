@@ -53,6 +53,10 @@ const userSchema = new Schema({
         type:Schema.Types.ObjectId,
         ref:'Team'
     },
+    joiningDate:{
+        type:Date,
+        required:false
+    },
     image:{
         type:String,
         required:false,
