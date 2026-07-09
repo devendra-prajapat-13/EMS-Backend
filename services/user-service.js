@@ -3,6 +3,7 @@ const LeaveModel = require('../models/leave-model');
 const UserSalaryModel = require('../models/user-salary');
 const AttendanceModel = require('../models/attendance-model');
 const PayrollModel = require('../models/payroll-model');
+const WorkSessionModel = require('../models/work-session-model');
 const bcrypt = require('bcrypt');
 
 class UserService {
@@ -19,7 +20,8 @@ class UserService {
         LeaveModel.deleteMany({ applicantID: _id }),
         UserSalaryModel.deleteMany({ employeeID: _id }),
         AttendanceModel.deleteMany({ employeeID: _id }),
-        PayrollModel.deleteMany({ employeeID: _id })
+        PayrollModel.deleteMany({ employeeID: _id }),
+        WorkSessionModel.deleteMany({ employeeID: _id })
     ]);
 
     findCount = async filter => await UserModel.find(filter).countDocuments();

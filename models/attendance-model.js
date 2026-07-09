@@ -8,6 +8,7 @@ const AttendanceSchema = new Schema({
     date: {type: Number, required: true},
     day: {type: String, required: true},
     present: {type: Boolean, required: true},
+    status: {type: String, enum: ['Present', 'Half Day', 'WFH', 'Leave', 'Absent'], default: 'Present'},
     checkInTime: {type: Date, required: false},
     mode: {type: String, enum: ['Office', 'Work From Home'], default: 'Office'},
     latitude: {type: Number, required: false},

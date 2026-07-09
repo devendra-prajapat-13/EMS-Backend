@@ -6,6 +6,7 @@ const tokenService = require('../services/token-service');
 const UserDto = require('../dtos/user-dto');
 const otpService = require('../services/otp-service');
 const mailService = require('../services/mail-service');
+const workSessionService = require('../services/work-session-service');
 
 class AuthController {
 
@@ -44,7 +45,11 @@ class AuthController {
         })
 
         console.log(res);
-        res.json({success:true,message:'Login Successfull',user:new UserDto(user)})
+        let workSession;
+        if(type === 'employee' || type === 'leader') {
+            workSession = await workSessionService.startSession(_id);
+        }
+        res.json({success:true,message:'Login Successfull',user:new UserDto(user), workSession})
     }
 
     forgot = async (req,res,next) =>
@@ -85,6 +90,7 @@ class AuthController {
     {
         const {refreshToken} = req.cookies;
         const {_id} = req.user;
+        await workSessionService.closeLatestOpenSession(_id);
         const response = await tokenService.removeRefreshToken(_id,refreshToken);
         res.clearCookie('refreshToken');
         res.clearCookie('accessToken');
@@ -122,7 +128,14 @@ class AuthController {
             maxAge:1000*60*60*24*30,
             httpOnly:true
         })
-        res.json({success:true,message:'Secure access has been granted',user:new UserDto(user)})
+        const workSummary = await workSessionService.getTodaySummary(_id);
+        res.json({success:true,message:'Secure access has been granted',user:new UserDto(user), workSummary})
+    }
+
+    todayWorkSummary = async (req, res, next) => {
+        const {_id} = req.user;
+        const data = await workSessionService.getTodaySummary(_id);
+        res.json({success:true,data});
     }
 
 }

@@ -7,6 +7,7 @@ router.post('/forgot',authController.forgot);               // Forgot Password
 router.patch('/reset',authController.reset);                // Reset Password
 router.get('/logout',auth,authController.logout);           // Logout
 router.get('/refresh',authController.refresh);              // Refresh Access Token
+router.get('/work-session/today',auth,authController.todayWorkSummary);
 
 
 
