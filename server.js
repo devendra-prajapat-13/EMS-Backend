@@ -9,6 +9,7 @@ const authRoute = require('./routes/auth-route');
 const adminRoute = require('./routes/admin-route');
 const employeeRoute = require('./routes/employee-route');
 const leaderRoute = require('./routes/leader-route');
+const holidayRoute = require('./routes/holiday-route');
 const errorMiddleware = require('./middlewares/error-middleware');
 const ErrorHandler = require('./utils/error-handler');
 const {auth, authRole} = require('./middlewares/auth-middleware');
@@ -37,6 +38,7 @@ app.use('/api/auth',authRoute);
 app.use('/api/admin',auth,authRole(['admin']),adminRoute);
 app.use('/api/employee',auth,authRole(['employee','leader']),employeeRoute);
 app.use('/api/leader',auth,authRole(['leader']),leaderRoute);
+app.use('/api/holidays',auth,holidayRoute);
 
 
 app.use('/storage',express.static('storage'))

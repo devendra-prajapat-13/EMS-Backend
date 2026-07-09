@@ -239,13 +239,16 @@ class UserController {
 
     markEmployeeAttendance = async (req,res,next) => {
         try {
-        const {employeeID, mode = 'Office', latitude, longitude} = req.body;
+        const {employeeID, mode = 'Office', status: requestedStatus, latitude, longitude} = req.body;
         const d = new Date();
         if(!employeeID) return next(ErrorHandler.badRequest('Employee Id Is Required'));
-        if(!['Office', 'Work From Home'].includes(mode)) return next(ErrorHandler.badRequest('Invalid attendance mode'));
+        const status = requestedStatus || (mode === 'Work From Home' ? 'WFH' : 'Present');
+        if(!['Present', 'Half Day', 'WFH', 'Leave', 'Absent'].includes(status)) return next(ErrorHandler.badRequest('Invalid attendance status'));
+        const attendanceMode = status === 'WFH' ? 'Work From Home' : mode;
+        if(!['Office', 'Work From Home'].includes(attendanceMode)) return next(ErrorHandler.badRequest('Invalid attendance mode'));
         let distanceFromOffice;
 
-        if(mode === 'Office') {
+        if(attendanceMode === 'Office' && ['Present', 'Half Day'].includes(status)) {
             const lat = Number(latitude);
             const lon = Number(longitude);
             if(!Number.isFinite(lat) || !Number.isFinite(lon)) {
@@ -264,7 +267,7 @@ class UserController {
             }
         }
 
-        if(mode === 'Work From Home') {
+        if(status === 'WFH') {
             const today = formatLocalDate(d);
             const applications = await userService.findAllLeaveApplications({
                 applicantID: employeeID,
@@ -312,9 +315,10 @@ class UserController {
             month:d.getMonth() + 1,
             date:d.getDate(),
             day:ATTENDANCE_DAYS[d.getDay()],
-            present: true, 
+            present: !['Leave', 'Absent'].includes(status), 
+            status,
             checkInTime: d,
-            mode,
+            mode: attendanceMode,
             latitude,
             longitude,
             distanceFromOffice,
@@ -339,7 +343,7 @@ class UserController {
        console.log(resp);
        if(!resp) return next(ErrorHandler.serverError('Failed to mark attendance'));
 
-       const msg = d.toLocaleDateString() +" "+ ATTENDANCE_DAYS[d.getDay()] +" "+ `${mode} Attendance Marked!`;
+       const msg = d.toLocaleDateString() +" "+ ATTENDANCE_DAYS[d.getDay()] +" "+ `${status} Attendance Marked!`;
        
        res.json({success:true,newAttendance:resp,message:msg});
             
@@ -470,9 +474,11 @@ class UserController {
     assignEmployeeSalary = async (req, res, next) => {
         try {
             const data = req.body;
-            const { employeeID, salary, bonus, reasonForBonus } = data;
-            if(!employeeID || !salary || bonus === undefined || !reasonForBonus) return next(ErrorHandler.badRequest('All Fields Required'));
+            const { employeeID, salary, basicSalary, bonus, reasonForBonus } = data;
+            if(!employeeID || !salary || basicSalary === undefined || bonus === undefined || !reasonForBonus) return next(ErrorHandler.badRequest('All Fields Required'));
             if(!isPositiveNumber(salary)) return next(ErrorHandler.badRequest('Salary must be greater than 0'));
+            if(!isPositiveNumber(basicSalary)) return next(ErrorHandler.badRequest('Basic salary must be greater than 0'));
+            if(Number(basicSalary) > Number(salary)) return next(ErrorHandler.badRequest('Basic salary cannot be greater than total salary'));
             if(Number(bonus) < 0) return next(ErrorHandler.badRequest('Bonus cannot be negative'));
             if(!hasMinLength(reasonForBonus, 3)) return next(ErrorHandler.badRequest('Reason must be at least 3 characters'));
             const obj = {
@@ -494,9 +500,11 @@ class UserController {
     updateEmployeeSalary = async (req,res,next) => {
         try {
             const body = req.body;
-            const {employeeID, salary, bonus, reasonForBonus} = body;
-            if(!employeeID || !salary || bonus === undefined || !reasonForBonus) return next(ErrorHandler.badRequest('All Fields Required'));
+            const {employeeID, salary, basicSalary, bonus, reasonForBonus} = body;
+            if(!employeeID || !salary || basicSalary === undefined || bonus === undefined || !reasonForBonus) return next(ErrorHandler.badRequest('All Fields Required'));
             if(!isPositiveNumber(salary)) return next(ErrorHandler.badRequest('Salary must be greater than 0'));
+            if(!isPositiveNumber(basicSalary)) return next(ErrorHandler.badRequest('Basic salary must be greater than 0'));
+            if(Number(basicSalary) > Number(salary)) return next(ErrorHandler.badRequest('Basic salary cannot be greater than total salary'));
             if(Number(bonus) < 0) return next(ErrorHandler.badRequest('Bonus cannot be negative'));
             if(!hasMinLength(reasonForBonus, 3)) return next(ErrorHandler.badRequest('Reason must be at least 3 characters'));
             const d = new Date();
