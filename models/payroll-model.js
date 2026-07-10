@@ -39,6 +39,8 @@ const PayrollSchema = new Schema({
     paymentDate: { type: Date, required: false },
     paymentMethod: { type: String, enum: ['Cash', 'Bank Transfer', 'UPI', 'Cheque', 'N/A'], default: 'N/A' },
     paymentRemarks: { type: String, default: '' },
+    salarySlipNumber: { type: String, default: '' },
+    salarySlipGeneratedAt: { type: Date, required: false },
     generatedAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now }
 });
