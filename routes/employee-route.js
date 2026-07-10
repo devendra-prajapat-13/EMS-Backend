@@ -14,5 +14,6 @@ router.post('/view-leave-applications',asyncMiddleware(userController.viewLeaveA
 router.post('/view-salary',asyncMiddleware(userController.viewSalary));
 router.post('/payroll-history',asyncMiddleware(userController.getEmployeePayrollHistory));
 router.post('/payroll-breakdown',asyncMiddleware(userController.getEmployeePayrollBreakdown));
+router.get('/payroll-slip/:id',asyncMiddleware(userController.getPayrollSlip));
 
 module.exports = router;

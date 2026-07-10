@@ -627,6 +627,24 @@ class UserController {
             res.json({ success: false, error });
         }
     }
+
+    getPayrollSlip = async (req, res, next) => {
+        try {
+            const { id } = req.params;
+            if(!mongoose.Types.ObjectId.isValid(id)) return next(ErrorHandler.badRequest('Invalid Payroll Id'));
+
+            const payroll = await payrollService.getPayrollSlip(id);
+            if(!payroll) return next(ErrorHandler.notFound('Salary slip not found'));
+            if(payroll.status !== 'Paid') return next(ErrorHandler.notAllowed('Salary slip is available after payment'));
+            if(req.user && req.user.type !== 'admin' && String(req.user._id) !== String(payroll.employeeID)) {
+                return next(ErrorHandler.unAuthorized('You can view only your own salary slip'));
+            }
+
+            res.json({ success: true, data: payroll });
+        } catch (error) {
+            res.json({ success: false, error });
+        }
+    }
 }
 
 module.exports = new UserController();

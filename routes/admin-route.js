@@ -36,6 +36,7 @@ router.post('/payroll-summary',asyncMiddleware(userController.getPayrollSummary)
 router.post('/generate-payroll',asyncMiddleware(userController.generatePayroll));
 router.post('/payroll/mark-paid',asyncMiddleware(userController.markPayrollPaid));
 router.post('/payroll-history',asyncMiddleware(userController.getEmployeePayrollHistory));
+router.get('/payroll-slip/:id',asyncMiddleware(userController.getPayrollSlip));
 router.post('/update-leave/:id',asyncMiddleware(userController.updateLeaveApplication));
 
 

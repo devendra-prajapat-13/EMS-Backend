@@ -94,6 +94,11 @@ const getDateRangeForMonth = (month, year) => ({
     end: new Date(year, month, 1)
 });
 
+const getSalarySlipNumber = (payroll) => {
+    const employeePart = String(payroll.employeeID || '').slice(-6).toUpperCase();
+    return `BF-${payroll.year}${String(payroll.month).padStart(2, '0')}-${employeePart}`;
+};
+
 class PayrollService {
     getMonthlyPaidLeaveAllocation = (monthsFromJoining) => monthsFromJoining % 3 === 2 ? 2 : 1;
 
@@ -400,12 +405,16 @@ class PayrollService {
         payroll.paymentDate = paymentDate ? new Date(paymentDate) : new Date();
         payroll.paymentMethod = paymentMethod || 'N/A';
         payroll.paymentRemarks = paymentRemarks || '';
+        payroll.salarySlipNumber = payroll.salarySlipNumber || getSalarySlipNumber(payroll);
+        payroll.salarySlipGeneratedAt = payroll.salarySlipGeneratedAt || new Date();
         payroll.updatedAt = new Date();
         return payroll.save();
     };
 
     getEmployeePayrollHistory = async (employeeID) =>
         Payroll.find({ employeeID }).sort({ year: -1, month: -1 });
+
+    getPayrollSlip = async (payrollID) => Payroll.findById(payrollID);
 }
 
 module.exports = new PayrollService();
